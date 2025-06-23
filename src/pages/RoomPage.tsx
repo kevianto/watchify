@@ -67,6 +67,7 @@ const RoomPage: React.FC = () => {
 
     // Socket listeners
     socket.on('receive-message', (messageData) => {
+      
       setMessages((prev) => [
         ...prev,
         {
