@@ -59,52 +59,84 @@ const RoomPage: React.FC = () => {
         return;
       }
 
-      // Connect to socket
       const socket = socketService.connect(token);
       socketService.joinRoom(roomId);
 
-      // Socket event listeners
+      // Message handling
+      socket.on('receive-message', (messageData) => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            username: messageData.sender,
+            message: messageData.text,
+            timestamp: new Date(),
+            isAnonymous: messageData.isAnonymous,
+          },
+        ]);
+      });
+
+      // Video sync
+      socket.on('play', () => {
+        (window as any).syncVideoControl?.('play');
+      });
+
+      socket.on('pause', () => {
+        (window as any).syncVideoControl?.('pause');
+      });
+
+      socket.on('seek', ({ time }) => {
+        (window as any).syncVideoControl?.('seek', time);
+      });
+
+      // User tracking (optional)
       socket.on('user-joined', (userData) => {
-        setUsers(prev => [...prev, userData]);
+        setUsers((prev) => [...prev, userData]);
       });
 
       socket.on('user-left', (userId) => {
-        setUsers(prev => prev.filter(u => u.id !== userId));
-      });
-
-      socket.on('receive-message', (messageData) => {
-        setMessages(prev => [...prev, {
-          id: Date.now().toString(),
-          username: messageData.username,
-          message: messageData.message,
-          timestamp: new Date(messageData.timestamp),
-          isAnonymous: messageData.isAnonymous
-        }]);
-      });
-
-      socket.on('video-sync', (syncData) => {
-        // Sync video playback
-        if ((window as any).syncVideoControl) {
-          (window as any).syncVideoControl(syncData.action, syncData.currentTime);
-        }
+        setUsers((prev) => prev.filter((u) => u.id !== userId));
       });
 
       socket.on('room-error', (errorData) => {
         setError(errorData.message);
       });
 
+      // Cleanup on unmount
       return () => {
         socketService.leaveRoom(roomId);
         socketService.disconnect();
+        socket.off('receive-message');
+        socket.off('play');
+        socket.off('pause');
+        socket.off('seek');
+        socket.off('user-joined');
+        socket.off('user-left');
+        socket.off('room-error');
       };
     };
 
     loadRoom();
   }, [roomId, user, token, navigate]);
 
-  const handleSendMessage = (message: string) => {
+  const handleSendMessage = (text: string) => {
     if (!roomId) return;
-    socketService.sendMessage(roomId, message);
+    socketService.sendMessage(roomId, {
+      sender: user.username,
+      text,
+      isAnonymous: user.isAnonymous,
+    });
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: Date.now().toString(),
+        username: user.username,
+        message: text,
+        timestamp: new Date(),
+        isAnonymous: user.isAnonymous,
+      },
+    ]);
   };
 
   const handleVideoControl = (action: string, currentTime?: number) => {
@@ -114,13 +146,12 @@ const RoomPage: React.FC = () => {
 
   const copyRoomId = async () => {
     if (!roomId) return;
-    
+
     try {
       await navigator.clipboard.writeText(roomId);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      // Fallback for older browsers
       const textArea = document.createElement('textarea');
       textArea.value = roomId;
       document.body.appendChild(textArea);
@@ -180,7 +211,7 @@ const RoomPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
       <Navbar />
-      
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Room Header */}
         <div className="mb-6">
@@ -203,7 +234,7 @@ const RoomPage: React.FC = () => {
                 </button>
               </div>
             </div>
-            
+
             <div className="flex items-center space-x-4">
               {isHost && (
                 <div className="bg-yellow-500/20 border border-yellow-500/30 text-yellow-300 px-3 py-1 rounded-full text-sm font-medium">
