@@ -2,14 +2,20 @@ import { io, Socket } from 'socket.io-client';
 
 const SOCKET_URL = 'https://watchify-backend-1.onrender.com';
 
+interface MessagePayload {
+  sender: string;
+  text: string;
+  isAnonymous?: boolean;
+}
+
 class SocketService {
   private socket: Socket | null = null;
 
   connect(token: string): Socket {
     this.socket = io(SOCKET_URL, {
       auth: {
-        token
-      }
+        token,
+      },
     });
     return this.socket;
   }
@@ -37,9 +43,10 @@ class SocketService {
     }
   }
 
-  sendMessage(roomId: string, message: string) {
+  // ✅ Updated to accept full message object
+  sendMessage(roomId: string, message: MessagePayload) {
     if (this.socket) {
-      this.socket.emit('send-message', { roomId, message });
+      this.socket.emit('send-message', { roomId, ...message });
     }
   }
 
