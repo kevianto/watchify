@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Play, Pause, Volume2, VolumeX, Maximize, RotateCcw } from 'lucide-react';
 
 interface VideoPlayerProps {
@@ -15,11 +15,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onTimeUpdate
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [isPlaying, setIsPlaying] = React.useState(false);
-  const [isMuted, setIsMuted] = React.useState(false);
-  const [currentTime, setCurrentTime] = React.useState(0);
-  const [duration, setDuration] = React.useState(0);
-  const [showControls, setShowControls] = React.useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [showControls, setShowControls] = useState(true);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -28,9 +28,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const handleTimeUpdate = () => {
       const time = video.currentTime;
       setCurrentTime(time);
-      if (onTimeUpdate) {
-        onTimeUpdate(time);
-      }
+      onTimeUpdate?.(time);
     };
 
     const handleLoadedMetadata = () => {
@@ -55,7 +53,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const handlePlayPause = () => {
     if (!isHost) return;
-    
+
     const video = videoRef.current;
     if (!video) return;
 
@@ -68,7 +66,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!isHost) return;
-    
+
     const video = videoRef.current;
     if (!video) return;
 
@@ -100,27 +98,23 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  // Sync video control from external events
-  const syncVideoControl = (action: string, time?: number) => {
+  // Externally triggered sync (from socket)
+  const syncVideoControl = async (action: string, time?: number) => {
     const video = videoRef.current;
     if (!video) return;
 
-    switch (action) {
-      case 'play':
-        video.play();
-        break;
-      case 'pause':
-        video.pause();
-        break;
-      case 'seek':
-        if (time !== undefined) {
-          video.currentTime = time;
-        }
-        break;
+    if (typeof time === 'number') {
+      video.currentTime = time;
+    }
+
+    try {
+      if (action === 'play') await video.play();
+      if (action === 'pause') video.pause();
+    } catch (err) {
+      console.warn('Auto-play prevented:', err);
     }
   };
 
-  // Expose sync function to parent
   useEffect(() => {
     (window as any).syncVideoControl = syncVideoControl;
     return () => {
@@ -139,59 +133,51 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         src={videoUrl}
         className="w-full aspect-video"
         onClick={handlePlayPause}
+        controls={isHost}
+        muted={isMuted}
       />
-      
-      {/* Controls Overlay */}
+
       <div className={`absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-        {/* Play/Pause Button Overlay */}
-        {!isPlaying && (
+        {/* Play Overlay (if paused) */}
+        {!isPlaying && isHost && (
           <div className="absolute inset-0 flex items-center justify-center">
             <button
               onClick={handlePlayPause}
-              disabled={!isHost}
-              className={`w-20 h-20 rounded-full flex items-center justify-center transition-all ${
-                isHost 
-                  ? 'bg-white/20 hover:bg-white/30 backdrop-blur-sm' 
-                  : 'bg-gray-500/20 cursor-not-allowed'
-              }`}
+              className="w-20 h-20 bg-white/20 hover:bg-white/30 rounded-full backdrop-blur-sm flex items-center justify-center"
             >
               <Play className="h-10 w-10 text-white ml-1" />
             </button>
           </div>
         )}
 
-        {/* Host indicator */}
+        {/* Host-only badge */}
         {!isHost && (
           <div className="absolute top-4 left-4">
-            <div className="bg-orange-500/80 backdrop-blur-sm text-white px-3 py-1 rounded-full text-sm font-medium">
+            <div className="bg-orange-500/80 text-white px-3 py-1 rounded-full text-sm font-medium backdrop-blur-sm">
               <RotateCcw className="inline h-3 w-3 mr-1" />
               Host controls playback
             </div>
           </div>
         )}
 
-        {/* Bottom Controls */}
+        {/* Controls bar */}
         <div className="absolute bottom-0 left-0 right-0 p-4">
           <div className="flex items-center space-x-4">
-            {/* Play/Pause */}
             <button
               onClick={handlePlayPause}
               disabled={!isHost}
               className={`p-2 rounded-full transition-colors ${
-                isHost 
-                  ? 'hover:bg-white/20 text-white' 
-                  : 'text-gray-400 cursor-not-allowed'
+                isHost ? 'hover:bg-white/20 text-white' : 'text-gray-400 cursor-not-allowed'
               }`}
             >
               {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
             </button>
 
-            {/* Time */}
             <span className="text-white text-sm font-medium">
               {formatTime(currentTime)} / {formatTime(duration)}
             </span>
 
-            {/* Progress Bar */}
+            {/* Progress bar */}
             <div className="flex-1">
               <input
                 type="range"
@@ -201,9 +187,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 onChange={handleSeek}
                 disabled={!isHost}
                 className={`w-full h-2 rounded-lg appearance-none cursor-pointer ${
-                  isHost 
-                    ? 'bg-white/30 slider-thumb-purple' 
-                    : 'bg-gray-600 cursor-not-allowed'
+                  isHost ? 'bg-white/30 slider-thumb-purple' : 'bg-gray-600 cursor-not-allowed'
                 }`}
                 style={{
                   background: `linear-gradient(to right, #8B5CF6 0%, #8B5CF6 ${(currentTime / duration) * 100}%, rgba(255,255,255,0.3) ${(currentTime / duration) * 100}%, rgba(255,255,255,0.3) 100%)`
@@ -211,19 +195,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
               />
             </div>
 
-            {/* Volume */}
-            <button
-              onClick={handleMute}
-              className="p-2 rounded-full hover:bg-white/20 text-white"
-            >
+            <button onClick={handleMute} className="p-2 rounded-full hover:bg-white/20 text-white">
               {isMuted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
             </button>
 
-            {/* Fullscreen */}
-            <button
-              onClick={handleFullscreen}
-              className="p-2 rounded-full hover:bg-white/20 text-white"
-            >
+            <button onClick={handleFullscreen} className="p-2 rounded-full hover:bg-white/20 text-white">
               <Maximize className="h-5 w-5" />
             </button>
           </div>

@@ -65,9 +65,8 @@ const RoomPage: React.FC = () => {
 
     loadRoom();
 
-    // Socket listeners
+    // ✅ Socket listeners
     socket.on('receive-message', (messageData) => {
-      
       setMessages((prev) => [
         ...prev,
         {
@@ -80,6 +79,7 @@ const RoomPage: React.FC = () => {
       ]);
     });
 
+    // ✅ Receive video controls from host
     socket.on('play', () => {
       (window as any).syncVideoControl?.('play');
     });
@@ -125,8 +125,6 @@ const RoomPage: React.FC = () => {
       text,
       isAnonymous: user.isAnonymous,
     });
-
-    // ✅ No need to manually setMessages here — handled via 'receive-message' event
   };
 
   const handleVideoControl = (action: string, currentTime?: number) => {
