@@ -47,6 +47,9 @@ const RoomPage: React.FC = () => {
   useEffect(() => {
     if (!roomId || !user || !token) return;
 
+    const socket = socketService.connect(token);
+    socketService.joinRoom(roomId);
+
     const loadRoom = async () => {
       try {
         const response = await roomService.getRoomUsers(roomId);
@@ -58,85 +61,71 @@ const RoomPage: React.FC = () => {
         setLoading(false);
         return;
       }
-
-      const socket = socketService.connect(token);
-      socketService.joinRoom(roomId);
-
-      // Message handling
-      socket.on('receive-message', (messageData) => {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now().toString(),
-            username: messageData.sender,
-            message: messageData.text,
-            timestamp: new Date(),
-            isAnonymous: messageData.isAnonymous,
-          },
-        ]);
-      });
-
-      // Video sync
-      socket.on('play', () => {
-        (window as any).syncVideoControl?.('play');
-      });
-
-      socket.on('pause', () => {
-        (window as any).syncVideoControl?.('pause');
-      });
-
-      socket.on('seek', ({ time }) => {
-        (window as any).syncVideoControl?.('seek', time);
-      });
-
-      // User tracking (optional)
-      socket.on('user-joined', (userData) => {
-        setUsers((prev) => [...prev, userData]);
-      });
-
-      socket.on('user-left', (userId) => {
-        setUsers((prev) => prev.filter((u) => u.id !== userId));
-      });
-
-      socket.on('room-error', (errorData) => {
-        setError(errorData.message);
-      });
-
-      // Cleanup on unmount
-      return () => {
-        socketService.leaveRoom(roomId);
-        socketService.disconnect();
-        socket.off('receive-message');
-        socket.off('play');
-        socket.off('pause');
-        socket.off('seek');
-        socket.off('user-joined');
-        socket.off('user-left');
-        socket.off('room-error');
-      };
     };
 
     loadRoom();
+
+    // Socket listeners
+    socket.on('receive-message', (messageData) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          username: messageData.sender,
+          message: messageData.text,
+          timestamp: new Date(),
+          isAnonymous: messageData.isAnonymous,
+        },
+      ]);
+    });
+
+    socket.on('play', () => {
+      (window as any).syncVideoControl?.('play');
+    });
+
+    socket.on('pause', () => {
+      (window as any).syncVideoControl?.('pause');
+    });
+
+    socket.on('seek', ({ time }) => {
+      (window as any).syncVideoControl?.('seek', time);
+    });
+
+    socket.on('user-joined', (userData) => {
+      setUsers((prev) => [...prev, userData]);
+    });
+
+    socket.on('user-left', (userId) => {
+      setUsers((prev) => prev.filter((u) => u.id !== userId));
+    });
+
+    socket.on('room-error', (errorData) => {
+      setError(errorData.message);
+    });
+
+    return () => {
+      socketService.leaveRoom(roomId);
+      socketService.disconnect();
+      socket.off('receive-message');
+      socket.off('play');
+      socket.off('pause');
+      socket.off('seek');
+      socket.off('user-joined');
+      socket.off('user-left');
+      socket.off('room-error');
+    };
   }, [roomId, user, token, navigate]);
 
   const handleSendMessage = (text: string) => {
     if (!roomId) return;
+
     socketService.sendMessage(roomId, {
       sender: user.username,
       text,
       isAnonymous: user.isAnonymous,
     });
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: Date.now().toString(),
-        username: user.username,
-        message: text,
-        timestamp: new Date(),
-        isAnonymous: user.isAnonymous,
-      },
-    ]);
+    // ✅ No need to manually setMessages here — handled via 'receive-message' event
   };
 
   const handleVideoControl = (action: string, currentTime?: number) => {
@@ -146,7 +135,6 @@ const RoomPage: React.FC = () => {
 
   const copyRoomId = async () => {
     if (!roomId) return;
-
     try {
       await navigator.clipboard.writeText(roomId);
       setCopied(true);
